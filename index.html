@@ -1,1 +1,813 @@
-Stay tuned!
+<!DOCTYPE html>
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link href="./static/css/bootstrap.min.css" rel="stylesheet">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans&family=Roboto:wght@300&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./static/css/glide.core.css">
+    <link rel="stylesheet" href="./static/css/glide.theme.css">
+    <link rel="stylesheet" type="text/css" href="./static/css/styles.css">
+
+    <script src="./static/js/jquery.min.js"></script>
+    <script src="./static/js/jquery.flip.min.js"></script>
+
+    <script src="./static/js/glide.min.js"></script>
+
+    <script>
+      MathJax = {
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+        }
+      };
+    </script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <title>M&M VTO: Multi-Garment Virtual Try-On and Editing</title>
+  </head>
+  <body>
+
+    <section id="title_authors">
+      <div style="padding-top: 50px; padding-bottom: 5px; background-color: rgb(255, 255, 255);">
+        <h1 style="text-align: center; color: rgb(0, 0, 0);">M&M VTO: Multi-Garment Virtual Try-On and Editing</h1>
+      </div>
+  
+      <div class="authors" style="background-color: rgb(255, 255, 255); margin-top: -20px;">
+        <p style="padding-bottom: 25px; color:rgb(0, 0, 0)">
+          <a href="https://homes.cs.washington.edu/~lyzhu/">Luyang Zhu</a><sup>1,2</sup>, 
+          <a href="http://www.svcl.ucsd.edu/people/yingwei/">Yingwei Li</a><sup>1</sup>, 
+          <a href="https://nanliu.io/">Nan Liu</a><sup>1</sup>, 
+          <a href="https://www.linkedin.com/in/hao-peng-04b5281b/">Hao Peng</a><sup>1</sup>, 
+        </p>
+        <p style="padding-bottom: 25px; color: rgb(0, 0, 0)">
+          <a href="https://scholar.google.com/citations?user=DCysnS0AAAAJ&hl=en">Dawei Yang</a><sup>1</sup>,
+          <a href="https://www.irakemelmacher.com/">Ira Kemelmacher-Shlizerman</a><sup>1,2</sup>
+        </p>
+        <p class="smaller" style="padding-bottom: 25px; color: rgb(0, 0, 0)"><sup>1</sup>Google Research <sup>2</sup>University of Washington</p>
+        <p style="color: rgb(0, 0, 0)">CVPR 2024 (Highlight)</p>
+      </div>
+    </section>
+
+    <section id="abstract">
+      <div class="abstract" style="background-color: rgb(255, 255, 255); margin-top: -30px;">
+        <div class="inside">
+          <p class="text" style="color:rgb(0, 0, 0)">
+            We present M&M VTO–a mix and match virtual try-on method that takes as input multiple garment images,
+            text description for garment layout and an image of a person.
+            An example input includes: an image of a shirt, an image of a pair of pants,
+            "rolled sleeves, shirt tucked in", and an image of a person.
+            The output is a visualization of how those garments (in the desired layout) would look like on the given person.
+            Key contributions of our method are:
+            1) a single stage diffusion based model, with no super resolution cascading,
+            that allows to mix and match multiple garments at 1024x512 resolution preserving and warping intricate garment details,
+            2) architecture design (VTO UNet Diffusion Transformer) to disentangle denoising from person specific features,
+            allowing for a highly effective finetuning strategy for identity preservation (6MB model per individual vs 4GB achieved with, e.g., dreambooth finetuning);
+            solving a common identity loss problem in current virtual try-on methods,
+            3) layout control for multiple garments via text inputs specifically finetuned over PaLI-3 for virtual try-on task.
+            Experimental results indicate that M&M VTO achieves state-of-the-art performance both qualitatively and quantitatively,
+            as well as opens up new opportunities for virtual try-on via language-guided and multi-garment try-on.
+          </p>
+          <a class="read-paper" target="_blank" href="#"><button>Research Paper</button></a>
+          <a class="read-paper" target="_blank" href="https://www.youtube.com/watch?v=1a7dm1H2lYY"><button>Video</button></a>
+        </div>
+      </div>
+    </section>
+
+    <section id="method">
+      <div class="header_dark_gray" style="background-color: rgb(230, 230, 230); color:rgb(0, 0, 0)">
+        <h1>Approach</h1>
+      </div>
+      <div class="white">
+        <figure>
+          <img src="./static/images/overall_pipeline.png">
+          <figcaption style="background-color: rgb(255, 255, 255);">
+            <p>
+              <b>Overview of M&M VTO.</b> Left: Given multiple garments (top and bottom in this case,
+              full-body garment not shown for this example), layout description, and a person image,
+              our method enables multi-garment virtual try-on.
+              Right: By freezing all the parameters, we optimize  person feature embeddings extracted from
+              the person encoder to improve person identity for a specific input image.
+              The fine-tuning process recovers the information lost via agnostic computation.
+            </p>
+          </figcaption>
+        </figure>
+        <figure>
+          <img src="./static/images/vto_udit.png">
+          <figcaption style="background-color: rgb(255, 255, 255);">
+            <p>
+              <b>VTO-UDiT Architecture.</b> For image inputs, UNet encoders ($\mathbf{E}_{\mathbf{z}_t}$, $\mathbf{E}_{p}$, $\mathbf{E}_{g}$)
+              extract features maps ($\mathcal{F}_{\mathbf{z}_t}$, $\mathcal{F}_{p}$, $\mathcal{F}_{g}^{\kappa}$)
+              from $\mathbf{z}_t$, $I_{a}$, $I_{c}^{\kappa}$, respectively,
+              with $\kappa \in \{\text{upper}, \text{lower}, \text{full}\}$.
+              Diffusion timestep $t$ and garment attributes $y_{\text{gl}}$ are embedded with sinusoidal positional encoding,
+              followed by a linear layer.
+              The embeddings ($\mathcal{F}_{t}$ and $\mathcal{F}_{y_{\text{gl}}}$) are then used to modulate features
+              with <a href="https://research.google/pubs/feature-wise-transformations/">FiLM</a> or
+              concatenated to the key-value feature of self-attention
+              in DiT similar to Following <a href="https://imagen.research.google">Imagen</a>.
+              Following <a href="https://tryondiffusion.github.io">TryOnDiffusion</a>,
+              spatially aligned features($\mathcal{F}_{\mathbf{z}_t}$, $\mathcal{F}_{p}$) are concatenated
+              whereas $\mathcal{F}_{g}^{\kappa}$ are implicitly warped with cross-attention blocks.
+              The final denoised image $\hat{\mathbf{x}}_0$ is obtained with decoder $\mathbf{D}_{\mathbf{z}_t}$,
+              which is architecturally symmetrical to $\mathbf{E}_{\mathbf{z}_t}$.
+            </p>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="interactive_demo">
+      <div class="header_dark_gray" style="background-color: rgb(230, 230, 230); color:rgb(0, 0, 0)">
+        <h1>Interactive Try-on Demo</h1>
+      </div>
+      <div class="tryon_demo">
+          <div class="main">
+              <div class="column">
+                  <img id="menTopGarmentImage" src="static/demo_images/men/ct_0.jpg" />
+                  <p>Top Garment</p>
+                  <button onclick="changeImage('prev', 'top_garment', 'men', 13, 12)">Prev</button>
+                  <button onclick="changeImage('next', 'top_garment', 'men', 13, 12)">Next</button>
+              </div>
+              <div class="column">
+                  <img id="menTryonImage" src="static/demo_images/men/ct_0--cb_0.jpg" />
+                  <p>Person or Try-on</p>
+                  <button onclick="switchPersonTryOn('person', 'men')">Person</button>
+                  <button onclick="switchPersonTryOn('try_on', 'men')">Try-on</button>
+              </div>
+              <div class="column">
+                  <img id="menBottomGarmentImage" src="static/demo_images/men/cb_0.jpg" />
+                  <p>Bottom Garment</p>
+                  <button onclick="changeImage('prev', 'bottom_garment', 'men', 13, 12)">Prev</button>
+                  <button onclick="changeImage('next', 'bottom_garment', 'men', 13, 12)">Next</button>
+              </div>
+          </div>
+          <script src="./static/js/demo_script_men.js"></script>
+      </div>
+      <div class="tryon_demo">
+          <div class="main">
+              <div class="column">
+                  <img id="womenTopGarmentImage" src="static/demo_images/women/ct_0.jpg" />
+                  <p>Top Garment</p>
+                  <button onclick="changeWomenImage('prev', 'top_garment', 'women', 12, 16)">Prev</button>
+                  <button onclick="changeWomenImage('next', 'top_garment', 'women', 12, 16)">Next</button>
+              </div>
+              <div class="column">
+                  <img id="womenTryonImage" src="static/demo_images/women/ct_0--cb_0.jpg" />
+                  <p>Person or Try-on</p>
+                  <button onclick="switchWomenTryOn('person', 'women')">Person</button>
+                  <button onclick="switchWomenTryOn('try_on', 'women')">Try-on</button>
+              </div>
+              <div class="column">
+                  <img id="womenBottomGarmentImage" src="static/demo_images/women/cb_0.jpg" />
+                  <p>Bottom Garment</p>
+                  <button onclick="changeWomenImage('prev', 'bottom_garment', 'women', 12, 16)">Prev</button>
+                  <button onclick="changeWomenImage('next', 'bottom_garment', 'women', 12, 16)">Next</button>
+              </div>
+          </div>
+          <script src="./static/js/demo_script_women.js"></script>
+      </div>
+    </section>
+
+    <div class="header_dark_gray" style="background-color: rgb(230, 230, 230); color:rgb(0, 0, 0)">
+      <h1>Qualitative Results</h1>
+    </div>
+
+    <section id="posed_garment_vto">
+      <div class="ablation">
+        <h1>Posed Garment VTO</h1>
+      </div>
+      <div class="glide" style="text-align: center;" id="posed_garment_vto">
+        <div class="glide__track" data-glide-el="track">
+          <ul class="glide__slides">
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/1.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/2.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/3.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/4.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/5.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/6.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/7.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/8.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/9.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/10.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/11.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/12.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/13.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/posed_garment_vto/14.jpg"></div>
+            </li>
+          </ul>
+        </div>
+        <div class="glide__arrows" data-glide-el="controls">
+          <button class="glide__arrow glide__arrow--left" data-glide-dir="<" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);left: 3%;">prev</button>
+          <button class="glide__arrow glide__arrow--right" data-glide-dir=">" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);right: 3%;">next</button>
+        </div>
+      </div>
+      <script>
+        new Glide('#posed_garment_vto', {
+          type: 'carousel',
+          startAt: 0,
+          perView: 1
+        }).mount();
+      </script>
+      <div class="comparison_caption">
+        <div class="column" style="left: 0%; width: 25%;">
+            <p>Input Person</p>
+        </div>
+        <div class="column" style="left: 25%; width: 25%;">
+            <p>Input Garments</p>
+        </div>
+        <div class="column" style="left: 50%; width: 25%;">
+          <p>TryOnDiffusion</p>
+        </div>
+        <div class="column" style="left: 75%; width: 25%;">
+            <p>Ours</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="layflat_garment_vto">
+      <div class="ablation">
+        <h1>Layflat Garment VTO</h1>
+      </div>
+      <div class="glide" style="text-align: center;" id="layflat_garment_vto">
+        <div class="glide__track" data-glide-el="track">
+          <ul class="glide__slides">
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layflat_garment_vto/1.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layflat_garment_vto/2.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layflat_garment_vto/3.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layflat_garment_vto/4.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layflat_garment_vto/5.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layflat_garment_vto/6.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layflat_garment_vto/7.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layflat_garment_vto/8.jpg"></div>
+            </li>
+          </ul>
+        </div>
+        <div class="glide__arrows" data-glide-el="controls">
+          <button class="glide__arrow glide__arrow--left" data-glide-dir="<" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);left: 3%;">prev</button>
+          <button class="glide__arrow glide__arrow--right" data-glide-dir=">" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);right: 3%;">next</button>
+        </div>
+      </div>
+      <script>
+        new Glide('#layflat_garment_vto', {
+          type: 'carousel',
+          startAt: 0,
+          perView: 1
+        }).mount();
+      </script>
+      <div class="comparison_caption">
+        <div class="column" style="left: 0%; width: 14.3%;">
+            <p>Input Person</p>
+        </div>
+        <div class="column" style="left: 14.3%; width: 14.3%;">
+            <p>Input Garments</p>
+        </div>
+        <div class="column" style="left: 28.6%; width: 14.3%;">
+          <p>TryOnDiffusion</p>
+        </div>
+        <div class="column" style="left: 42.9%; width: 14.3%;">
+          <p>GP-VTON</p>
+        </div>
+        <div class="column" style="left: 57.2%; width: 14.3%;">
+          <p>LaDI-VTON</p>
+        </div>
+        <div class="column" style="left: 71.5%; width: 14.3%;">
+            <p>Ours-DressCode</p>
+        </div>
+        <div class="column" style="left: 85.8%; width: 14.2%;">
+          <p>Ours</p>
+      </div>
+      </div>
+    </section>
+
+    <section id="person_identity">
+      <div class="ablation">
+        <h1>Person Identity Preservation</h1>
+      </div>
+      <div class="glide" style="text-align: center;" id="glide_person_identity">
+        <div class="glide__track" data-glide-el="track">
+          <ul class="glide__slides">
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/women1_1.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/women1_2.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/women1_3.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/women1_4.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/women1_5.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/women2_1.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/women2_2.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/women2_3.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/women2_4.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/men1_1.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/men1_2.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/men1_3.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/men1_4.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/men1_5.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/men2_1.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/men2_2.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/men2_3.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/person_identity/men2_4.jpg"></div>
+            </li>
+          </ul>
+        </div>
+        <div class="glide__arrows" data-glide-el="controls">
+          <button class="glide__arrow glide__arrow--left" data-glide-dir="<" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);left: 3%;">prev</button>
+          <button class="glide__arrow glide__arrow--right" data-glide-dir=">" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);right: 3%;">next</button>
+        </div>
+      </div>
+      <script>
+        new Glide('#glide_person_identity', {
+          type: 'carousel',
+          startAt: 0,
+          perView: 1
+        }).mount();
+      </script>
+      <div class="comparison_caption">
+        <div class="column" style="left: 0%; width: 16.6%;">
+            <p>Input<br>Person</p>
+        </div>
+        <div class="column" style="left: 16.6%; width: 16.6%;">
+            <p>Input<br>Garments</p>
+        </div>
+        <div class="column" style="left: 33.2%; width: 16.6%;">
+            <p>Fine-tuned<br>Full Model</p>
+        </div>
+        <div class="column" style="left: 49.8%; width: 16.6%;">
+            <p>Fine-tuned<br>Person Encoder</p>
+        </div>
+        <div class="column" style="left: 66.4%; width: 16.6%;">
+          <p>Ours Without<br>Fine-tuning</p>
+        </div>
+        <div class="column" style="left: 83%; width: 16.6%;">
+            <p>Ours With<br>Fine-tuning</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="ablation">
+      <h1>Garment Layout Editing</h1>
+    </div>
+    <section id="layout_edit_tuckin">
+      <div class="ablation">
+        <h2>Instruction: Tuck in the shirt</h2>
+      </div>
+      <div class="glide" style="text-align: center;" id="glide_layout_edit_tuckin">
+        <div class="glide__track" data-glide-el="track">
+          <ul class="glide__slides">
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/tuckin_1.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/tuckin_2.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/tuckin_3.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/tuckin_4.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/tuckin_5.jpg"></div>
+            </li>
+          </ul>
+        </div>
+        <div class="glide__arrows" data-glide-el="controls">
+          <button class="glide__arrow glide__arrow--left" data-glide-dir="<" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);left: 3%;">prev</button>
+          <button class="glide__arrow glide__arrow--right" data-glide-dir=">" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);right: 3%;">next</button>
+        </div>
+      </div>
+      <script>
+        new Glide('#glide_layout_edit_tuckin', {
+          type: 'carousel',
+          startAt: 0,
+          perView: 1
+        }).mount();
+      </script>
+      <div class="comparison_caption">
+        <div class="column" style="left: 0%; width: 12.5%;">
+            <p>Input<br>Person</p>
+        </div>
+        <div class="column" style="left: 12.5%; width: 12.5%;">
+            <p>Input<br>Garments</p>
+        </div>
+        <div class="column" style="left: 25%; width: 12.5%;">
+          <p>Imagen<br>Editor</p>
+        </div>
+        <div class="column" style="left: 37.5%; width: 12.5%;">
+          <p>SDXL<br>Inpainting</p>
+        </div>
+        <div class="column" style="left: 50%; width: 12.5%;">
+          <p>DiffEdit</p>
+        </div>
+        <div class="column" style="left: 62.5%; width: 12.5%;">
+          <p>InstructP2P</p>
+        </div>
+        <div class="column" style="left: 75%; width: 12.5%;">
+          <p>P2P + NI</p>
+        </div>
+        <div class="column" style="left: 87.5%; width: 12.5%;">
+          <p>Ours</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="layout_edit_tuckout">
+      <div class="ablation">
+        <h2>Instruction: Tuck out the shirt</h2>
+      </div>
+      <div class="glide" style="text-align: center;" id="glide_layout_edit_tuckout">
+        <div class="glide__track" data-glide-el="track">
+          <ul class="glide__slides">
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/tuckout_1.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/tuckout_2.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/tuckout_3.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/tuckout_4.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/tuckout_5.jpg"></div>
+            </li>
+          </ul>
+        </div>
+        <div class="glide__arrows" data-glide-el="controls">
+          <button class="glide__arrow glide__arrow--left" data-glide-dir="<" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);left: 3%;">prev</button>
+          <button class="glide__arrow glide__arrow--right" data-glide-dir=">" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);right: 3%;">next</button>
+        </div>
+      </div>
+      <script>
+        new Glide('#glide_layout_edit_tuckout', {
+          type: 'carousel',
+          startAt: 0,
+          perView: 1
+        }).mount();
+      </script>
+      <div class="comparison_caption">
+        <div class="column" style="left: 0%; width: 12.5%;">
+            <p>Input<br>Person</p>
+        </div>
+        <div class="column" style="left: 12.5%; width: 12.5%;">
+            <p>Input<br>Garments</p>
+        </div>
+        <div class="column" style="left: 25%; width: 12.5%;">
+          <p>Imagen<br>Editor</p>
+        </div>
+        <div class="column" style="left: 37.5%; width: 12.5%;">
+          <p>SDXL<br>Inpainting</p>
+        </div>
+        <div class="column" style="left: 50%; width: 12.5%;">
+          <p>DiffEdit</p>
+        </div>
+        <div class="column" style="left: 62.5%; width: 12.5%;">
+          <p>InstructP2P</p>
+        </div>
+        <div class="column" style="left: 75%; width: 12.5%;">
+          <p>P2P + NI</p>
+        </div>
+        <div class="column" style="left: 87.5%; width: 12.5%;">
+          <p>Ours</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="layout_edit_rollup">
+      <div class="ablation">
+        <h2>Instruction: Roll up the Sleeve</h2>
+      </div>
+      <div class="glide" style="text-align: center;" id="glide_layout_edit_rollup">
+        <div class="glide__track" data-glide-el="track">
+          <ul class="glide__slides">
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/rollup_1.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/rollup_2.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/rollup_3.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/rollup_4.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/rollup_5.jpg"></div>
+            </li>
+          </ul>
+        </div>
+        <div class="glide__arrows" data-glide-el="controls">
+          <button class="glide__arrow glide__arrow--left" data-glide-dir="<" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);left: 3%;">prev</button>
+          <button class="glide__arrow glide__arrow--right" data-glide-dir=">" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);right: 3%;">next</button>
+        </div>
+      </div>
+      <script>
+        new Glide('#glide_layout_edit_rollup', {
+          type: 'carousel',
+          startAt: 0,
+          perView: 1
+        }).mount();
+      </script>
+      <div class="comparison_caption">
+        <div class="column" style="left: 0%; width: 12.5%;">
+            <p>Input<br>Person</p>
+        </div>
+        <div class="column" style="left: 12.5%; width: 12.5%;">
+            <p>Input<br>Garments</p>
+        </div>
+        <div class="column" style="left: 25%; width: 12.5%;">
+          <p>Imagen<br>Editor</p>
+        </div>
+        <div class="column" style="left: 37.5%; width: 12.5%;">
+          <p>SDXL<br>Inpainting</p>
+        </div>
+        <div class="column" style="left: 50%; width: 12.5%;">
+          <p>DiffEdit</p>
+        </div>
+        <div class="column" style="left: 62.5%; width: 12.5%;">
+          <p>InstructP2P</p>
+        </div>
+        <div class="column" style="left: 75%; width: 12.5%;">
+          <p>P2P + NI</p>
+        </div>
+        <div class="column" style="left: 87.5%; width: 12.5%;">
+          <p>Ours</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="layout_edit_rolldown">
+      <div class="ablation">
+        <h2>Instruction: Roll down the Sleeve</h2>
+      </div>
+      <div class="glide" style="text-align: center;" id="glide_layout_edit_rolldown">
+        <div class="glide__track" data-glide-el="track">
+          <ul class="glide__slides">
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/rolldown_1.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/rolldown_2.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/rolldown_3.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/rolldown_4.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/layout_editing/rolldown_5.jpg"></div>
+            </li>
+          </ul>
+        </div>
+        <div class="glide__arrows" data-glide-el="controls">
+          <button class="glide__arrow glide__arrow--left" data-glide-dir="<" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);left: 3%;">prev</button>
+          <button class="glide__arrow glide__arrow--right" data-glide-dir=">" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);right: 3%;">next</button>
+        </div>
+      </div>
+      <script>
+        new Glide('#glide_layout_edit_rolldown', {
+          type: 'carousel',
+          startAt: 0,
+          perView: 1
+        }).mount();
+      </script>
+      <div class="comparison_caption">
+        <div class="column" style="left: 0%; width: 12.5%;">
+            <p>Input<br>Person</p>
+        </div>
+        <div class="column" style="left: 12.5%; width: 12.5%;">
+            <p>Input<br>Garments</p>
+        </div>
+        <div class="column" style="left: 25%; width: 12.5%;">
+          <p>Imagen<br>Editor</p>
+        </div>
+        <div class="column" style="left: 37.5%; width: 12.5%;">
+          <p>SDXL<br>Inpainting</p>
+        </div>
+        <div class="column" style="left: 50%; width: 12.5%;">
+          <p>DiffEdit</p>
+        </div>
+        <div class="column" style="left: 62.5%; width: 12.5%;">
+          <p>InstructP2P</p>
+        </div>
+        <div class="column" style="left: 75%; width: 12.5%;">
+          <p>P2P + NI</p>
+        </div>
+        <div class="column" style="left: 87.5%; width: 12.5%;">
+          <p>Ours</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="dress_vto">
+      <div class="ablation">
+        <h1>Dress VTO</h1>
+      </div>
+      <div class="glide" style="text-align: center;" id="glide_dress_vto">
+        <div class="glide__track" data-glide-el="track">
+          <ul class="glide__slides">
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/1.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/2.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/3.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/4.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/5.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/6.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/7.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/8.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/9.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/10.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/11.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/12.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/13.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/14.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/15.jpg"></div>
+            </li>
+            <li class="glide__slide">
+              <div class="ablation"><img src="static/images/dress_vto/16.jpg"></div>
+            </li>
+          </ul>
+        </div>
+        <div class="glide__arrows" data-glide-el="controls">
+          <button class="glide__arrow glide__arrow--left" data-glide-dir="<" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);left: 3%;">prev</button>
+          <button class="glide__arrow glide__arrow--right" data-glide-dir=">" style="color:rgb(0, 0, 0); border: 2px solid rgba(0, 0, 0, 0.5);right: 3%;">next</button>
+        </div>
+      </div>
+      <script>
+        new Glide('#glide_dress_vto', {
+          type: 'carousel',
+          startAt: 0,
+          perView: 1
+        }).mount();
+      </script>
+      <div class="comparison_caption">
+        <div class="column" style="left: 0%; width: 33.3%;">
+            <p>Input Person</p>
+        </div>
+        <div class="column" style="left: 33.3%; width: 33.3%;">
+            <p>Input Garment</p>
+        </div>
+        <div class="column" style="left: 66.6%; width: 33.3%;">
+            <p>Try-on Result</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="limitations">
+      <div class="header_dark_gray" style="background-color: rgb(230, 230, 230); color:rgb(0, 0, 0)">
+        <h1>Limitations</h1>
+      </div>
+      <div class="limitations" style="background-color: rgb(255, 255, 255); color:rgb(0, 0, 0)">
+        <div class="inside">
+          <p class="text">
+            There are several limitations for M&M VTO.
+            First, our approach isn't designed for layout editing tasks, such as "Open the outer top",
+            as no specific information is provided from inputs about what should be inpainted in the open area.
+            Second, our method struggles with uncommon garment combinations found in the real world, like a long coat paired with skirts.
+            Third, our model faces challenges when dealing with upper-body clothing from different images,
+            e.g. pairing a shirt from one photo with an outer coat from another.
+            This issue mainly stems from the difficulty in finding training pairs where one image clearly shows a shirt without any cover,
+            while another displays the same shirt under an outer layer.
+            As a result, the model struggles to accurately remove the shirt when it's covered by an outer layer during testing.
+            Finally, note that our method visualizes how an item might look on a person, accounting for their body shape,
+            but it doesn't yet include size information nor solves for exact fit.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="bibTex_thanks">
+      <div class="content" style="background-color: rgb(255, 255, 255); color:rgb(0, 0, 0);">
+        <h1>BibTex</h1>
+        <p class="smaller">
+          @InProceedings{Zhu_2024_CVPR_mmvto,<br>
+            &nbsp;&nbsp;author={Zhu, Luyang and Li, Yingwei and Liu, Nan and Peng, Hao and Yang, Dawei and Kemelmacher-Shlizerman, Ira},<br>
+            &nbsp;&nbsp;title={M&M VTO: Multi-Garment Virtual Try-On and Editing},<br>
+            &nbsp;&nbsp;booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},<br>
+            &nbsp;&nbsp;month = {June},<br>
+            &nbsp;&nbsp;year={2024},<br>
+          }
+        </p>
+        <h1>Special Thanks</h1>
+        <p class="smaller" style="text-align: justify;">
+          This work was done when all authors were at Google.
+          We would like to thank Chris Lee, Andreas Lugmayr, Innfarn Yoo, Chunhui Gu, Alan Yang, Varsha Ramakrishnan,
+          Tyler Zhu, Srivatsan Varadharajan, Yasamin Jafarian and Ricardo Martin-Brualla for their insightful discussions.
+          We are grateful for the kind support of the whole Google ARML Commerce organization.
+          We thank Aurelia Di for her professional assistance on the garment layering Q&A survey design.
+        </p>
+      </div>
+    </section>
+
+    <script src="./static/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
